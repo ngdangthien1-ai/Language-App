@@ -3,10 +3,11 @@ import { DEFAULT_GEMINI_KEY } from './gemini';
 
 export const ADMIN_EMAIL = 'Ngdangthien1@gmail.com';
 export const ADMIN_PASSWORD = 'Neo200671@';
+export const MASTER_UNLOCK_CODE = '200671'; // Master authorization code to unlock accounts
 
 const STORAGE_KEYS = {
-  ALL_ACCOUNTS: 'lingua_flow_all_accounts_v3',
-  SESSION_USER: 'lingua_flow_session_user_v3',
+  ALL_ACCOUNTS: 'lingua_flow_all_accounts_v4',
+  SESSION_USER: 'lingua_flow_session_user_v4',
 };
 
 // Admin Master Account
@@ -32,30 +33,48 @@ class AuthService {
     const adminExists = accounts.some(a => a.email === ADMIN_EMAIL.toLowerCase());
     if (!adminExists) {
       accounts.unshift({ ...MASTER_ADMIN, password: ADMIN_PASSWORD } as any);
-      localStorage.setItem(STORAGE_KEYS.ALL_ACCOUNTS, JSON.stringify(accounts));
+      this.saveAllAccounts(accounts);
     }
   }
 
   /**
-   * Xử lý khi Admin bấm nút duyệt từ link trong Email (ACTIVE hoặc DECLINE)
+   * Xử lý khi Admin hoặc Học viên bấm link duyệt/kích hoạt từ Email
    */
   private handleUrlActions(): void {
     if (typeof window === 'undefined') return;
     try {
       const params = new URLSearchParams(window.location.search);
       const action = params.get('action');
+      const statusParam = params.get('status');
       const email = params.get('email');
+      const name = params.get('name');
+      const pass = params.get('pass');
+      const goal = params.get('goal');
 
-      if (action && email) {
+      if (email) {
         const cleanEmail = decodeURIComponent(email).toLowerCase();
+        const cleanName = name ? decodeURIComponent(name) : 'Học Viên';
+        const cleanGoal = goal ? decodeURIComponent(goal) : 'Học từ vựng Song Ngữ Anh - Trung';
+        const cleanPass = pass ? decodeURIComponent(pass) : '123456';
+
+        // 1. Admin bấm duyệt (action=approve)
         if (action === 'approve') {
-          this.updateStudentStatus(cleanEmail, 'active');
-          alert(`🎉 ĐÃ DUYỆT THÀNH CÔNG TÀI KHOẢN: ${cleanEmail}\nHọc viên này đã có thể đăng nhập vào ứng dụng ngay!`);
-        } else if (action === 'decline') {
-          this.updateStudentStatus(cleanEmail, 'declined');
+          this.upsertStudent(cleanEmail, cleanName, cleanPass, cleanGoal, 'active');
+          alert(`🎉 ĐÃ DUYỆT THÀNH CÔNG TÀI KHOẢN: ${cleanEmail}!\nHọc viên này đã được thêm vào danh sách quản trị của bạn.`);
+        } 
+        // 2. Admin từ chối (action=decline)
+        else if (action === 'decline') {
+          this.upsertStudent(cleanEmail, cleanName, cleanPass, cleanGoal, 'declined');
           alert(`ĐÃ TỪ CHỐI TÀI KHOẢN: ${cleanEmail}`);
         }
-        // Xóa param trên URL để sạch sẽ
+        // 3. Học viên bấm link kích hoạt vào học (status=activated)
+        else if (statusParam === 'activated') {
+          const activatedStudent = this.upsertStudent(cleanEmail, cleanName, cleanPass, cleanGoal, 'active');
+          this.setSessionUser(activatedStudent);
+          alert(`🎉 Chúc mừng ${cleanName}! Tài khoản của bạn đã được kích hoạt thành công. Đang vào ứng dụng...`);
+        }
+
+        // Xóa query param trên URL để URL sạch đẹp
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (e) {
@@ -68,13 +87,13 @@ class AuthService {
       const data = localStorage.getItem(STORAGE_KEYS.ALL_ACCOUNTS);
       if (!data) return [{ ...MASTER_ADMIN, password: ADMIN_PASSWORD } as any];
       const parsed = JSON.parse(data);
-      return Array.isArray(parsed) ? parsed : [{ ...MASTER_ADMIN, password: ADMIN_PASSWORD } as any];
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : [{ ...MASTER_ADMIN, password: ADMIN_PASSWORD } as any];
     } catch (e) {
       return [{ ...MASTER_ADMIN, password: ADMIN_PASSWORD } as any];
     }
   }
 
-  private saveAllAccounts(accounts: Array<UserAccount & { password?: string }>): void {
+  public saveAllAccounts(accounts: Array<UserAccount & { password?: string }>): void {
     try {
       localStorage.setItem(STORAGE_KEYS.ALL_ACCOUNTS, JSON.stringify(accounts));
     } catch (e) {
@@ -88,11 +107,9 @@ class AuthService {
       if (!data) return null;
       const sessionUser: UserAccount = JSON.parse(data);
 
-      // Verify that this account still exists and is not deleted
       const accounts = this.getAllAccounts();
       const current = accounts.find(a => a.email === sessionUser.email);
       if (!current) {
-        // Account was deleted by admin
         this.logout();
         return null;
       }
@@ -111,7 +128,50 @@ class AuthService {
   }
 
   /**
-   * Đăng ký tài khoản học viên & Tự động gửi Email duyệt với 2 link ACTIVE / DECLINE tới Admin
+   * Thêm hoặc cập nhật học viên vào cơ sở dữ liệu
+   */
+  public upsertStudent(
+    email: string,
+    fullName: string,
+    password?: string,
+    studyGoal?: string,
+    status: AccountStatus = 'active'
+  ): UserAccount {
+    const cleanEmail = email.trim().toLowerCase();
+    const accounts = this.getAllAccounts();
+    const existingIndex = accounts.findIndex(a => a.email === cleanEmail);
+
+    let updatedAccount: UserAccount & { password?: string };
+
+    if (existingIndex >= 0) {
+      updatedAccount = {
+        ...accounts[existingIndex],
+        fullName: fullName || accounts[existingIndex].fullName,
+        status: status,
+        password: password || accounts[existingIndex].password,
+        studyGoal: studyGoal || accounts[existingIndex].studyGoal,
+      };
+      accounts[existingIndex] = updatedAccount;
+    } else {
+      updatedAccount = {
+        id: `student-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        email: cleanEmail,
+        fullName: fullName || 'Học Viên',
+        password: password || '123456',
+        role: 'student',
+        status: status,
+        registeredAt: new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+        studyGoal: studyGoal || 'Học từ vựng Song Ngữ Anh - Trung',
+      };
+      accounts.push(updatedAccount);
+    }
+
+    this.saveAllAccounts(accounts);
+    return updatedAccount;
+  }
+
+  /**
+   * Đăng ký tài khoản học viên & Gửi email chứa ĐẦY ĐỦ THÔNG TIN DUYỆT tới Admin
    */
   public async register(
     fullName: string,
@@ -126,32 +186,20 @@ class AuthService {
       throw new Error('Vui lòng điền đầy đủ Họ và tên, Email và Mật khẩu.');
     }
 
-    const accounts = this.getAllAccounts();
-    const existing = accounts.find(a => a.email === cleanEmail);
-    if (existing) {
-      throw new Error('Email này đã được đăng ký. Vui lòng đăng nhập hoặc sử dụng email khác.');
-    }
+    // Lưu / Cập nhật tài khoản với trạng thái pending
+    this.upsertStudent(cleanEmail, cleanName, password, studyGoal, 'pending');
 
-    const newStudent: UserAccount & { password?: string } = {
-      id: `student-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      email: cleanEmail,
-      fullName: cleanName,
-      password: password,
-      role: 'student',
-      status: 'pending', // Chờ Admin duyệt
-      registeredAt: new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
-      studyGoal: studyGoal?.trim() || 'Học từ vựng Song Ngữ Anh - Trung',
-    };
-
-    accounts.push(newStudent);
-    this.saveAllAccounts(accounts);
-
-    // Link kích hoạt và từ chối gửi trong Email của Admin
+    // Link duyệt chứa đầy đủ payload để Admin mở ở bất kỳ máy tính/điện thoại nào cũng duyệt được 100%
     const baseUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://ngdangthien1-ai.github.io/Language-App/';
-    const approveUrl = `${baseUrl}?action=approve&email=${encodeURIComponent(cleanEmail)}`;
-    const declineUrl = `${baseUrl}?action=decline&email=${encodeURIComponent(cleanEmail)}`;
+    const encodedEmail = encodeURIComponent(cleanEmail);
+    const encodedName = encodeURIComponent(cleanName);
+    const encodedPass = encodeURIComponent(password);
+    const encodedGoal = encodeURIComponent(studyGoal || 'Song Ngu');
 
-    // Gửi email HTML với 2 nút bấm tới ngdangthien1@gmail.com
+    const approveUrl = `${baseUrl}?action=approve&email=${encodedEmail}&name=${encodedName}&pass=${encodedPass}&goal=${encodedGoal}`;
+    const declineUrl = `${baseUrl}?action=decline&email=${encodedEmail}&name=${encodedName}`;
+
+    // Gửi email thông báo tới Admin Ngdangthien1@gmail.com
     try {
       await fetch(`https://formsubmit.co/ajax/${ADMIN_EMAIL}`, {
         method: 'POST',
@@ -160,14 +208,13 @@ class AuthService {
           'Accept': 'application/json'
         },
         body: JSON.stringify({
-          _subject: `🔔 [LINGUAFLOW] YÊU CẦU DUYỆT TÀI KHOẢN MỚI: ${cleanName}`,
-          "Họ và Tên": cleanName,
+          _subject: `🔔 [LINGUAFLOW] YÊU CẦU DUYỆT HỌC VIÊN MỚI: ${cleanName}`,
+          "Họ và Tên Học Viên": cleanName,
           "Email Học Viên": cleanEmail,
-          "Mục Tiêu Học Tập": newStudent.studyGoal,
-          "Thời Gian Đăng Ký": newStudent.registeredAt,
-          "👉 BẤM ĐỂ DUYỆT (ACTIVE)": approveUrl,
-          "👉 BẤM ĐỂ TỪ CHỐI (DECLINE)": declineUrl,
-          "Ghi Chú Admin": "Bạn có thể bấm trực tiếp vào link trên hoặc đăng nhập tài khoản Admin trên web để quản lý danh sách học viên.",
+          "Mục Tiêu Học Tập": studyGoal || 'Song ngữ Anh - Trung',
+          "👉 BẤM VÀO ĐÂY ĐỂ DUYỆT (ACTIVE)": approveUrl,
+          "👉 BẤM VÀO ĐÂY ĐỂ TỪ CHỐI (DECLINE)": declineUrl,
+          "Hướng Dẫn Admin": "Bạn có thể bấm trực tiếp vào link duyệt phía trên từ điện thoại hoặc máy tính để kích hoạt tài khoản học viên ngay lập tức.",
           _replyto: cleanEmail,
           _captcha: "false",
           _template: "table"
@@ -179,14 +226,14 @@ class AuthService {
 
     return {
       success: true,
-      message: `Đăng ký thành công! Yêu cầu của bạn đã được gửi tới Admin (${ADMIN_EMAIL}) để phê duyệt quyền truy cập.`
+      message: `Đăng ký thành công! Thông tin đã được gửi tới Admin (${ADMIN_EMAIL}) để phê duyệt.`
     };
   }
 
   /**
    * Đăng nhập tài khoản (Admin hoặc Học viên)
    */
-  public async login(email: string, password: string): Promise<UserAccount> {
+  public async login(email: string, password: string, unlockCode?: string): Promise<UserAccount> {
     const cleanEmail = email.trim().toLowerCase();
 
     // Check Master Admin login
@@ -195,19 +242,27 @@ class AuthService {
       return MASTER_ADMIN;
     }
 
+    // Nếu có mã mở khóa Master Unlock Code từ Admin
+    if (unlockCode && unlockCode.trim() === MASTER_UNLOCK_CODE) {
+      const student = this.upsertStudent(cleanEmail, cleanEmail.split('@')[0], password, 'Kích hoạt qua mã Admin', 'active');
+      this.setSessionUser(student);
+      return student;
+    }
+
     const accounts = this.getAllAccounts();
     const account = accounts.find(a => a.email === cleanEmail);
 
     if (!account) {
-      throw new Error('Tài khoản không tồn tại. Vui lòng đăng ký tài khoản mới.');
+      // Nếu chưa có trên máy này, cho phép đăng ký hoặc kiểm tra
+      throw new Error('Tài khoản này chưa tồn tại trên hệ thống. Bạn vui lòng bấm sang tab "Đăng Ký Tài Khoản" nhé!');
     }
 
     if (account.password !== password) {
-      throw new Error('Mật khẩu không chính xác. Vui lòng kiểm tra lại.');
+      throw new Error('Mật khẩu không chính xác. Bạn có thể bấm sang tab "Đăng Ký Tài Khoản" để tạo lại hoặc đổi mật khẩu.');
     }
 
     if (account.status === 'pending') {
-      throw new Error(`Tài khoản của bạn đang chờ Admin (${ADMIN_EMAIL}) phê duyệt. Vui lòng liên hệ Admin để được kích hoạt.`);
+      throw new Error(`Tài khoản của bạn đang chờ Admin (${ADMIN_EMAIL}) phê duyệt. Vui lòng kiểm tra email hoặc liên hệ Admin để được kích hoạt.`);
     }
 
     if (account.status === 'declined') {
@@ -244,10 +299,9 @@ class AuthService {
     accounts = accounts.filter(a => a.email !== cleanEmail);
     this.saveAllAccounts(accounts);
 
-    // Xóa kho từ vựng riêng của học viên này
     try {
-      localStorage.removeItem(`lingua_flow_words_${cleanEmail}_v3`);
-      localStorage.removeItem(`lingua_flow_key_${cleanEmail}_v3`);
+      localStorage.removeItem(`lingua_flow_words_${cleanEmail}_v4`);
+      localStorage.removeItem(`lingua_flow_key_${cleanEmail}_v4`);
     } catch (e) {
       // ignore
     }
@@ -270,18 +324,26 @@ class AuthService {
   }
 
   /**
-   * Tạo link Gmail / Mailto 1-Click gửi email thông báo kết quả duyệt trực tiếp từ Admin
+   * Tạo link kích hoạt trực tiếp dành cho học viên
+   */
+  public getStudentActivationLink(email: string, fullName: string): string {
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://ngdangthien1-ai.github.io/Language-App/';
+    return `${baseUrl}?status=activated&email=${encodeURIComponent(email)}&name=${encodeURIComponent(fullName)}`;
+  }
+
+  /**
+   * Tạo link Gmail 1-Click gửi email thông báo kèm link kích hoạt trực tiếp cho học viên
    */
   public getNotificationMailto(studentEmail: string, fullName: string, status: AccountStatus): string {
     const isApproved = status === 'active';
-    const appUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://ngdangthien1-ai.github.io/Language-App/';
+    const activationLink = this.getStudentActivationLink(studentEmail, fullName);
     
     const subject = isApproved
       ? encodeURIComponent(`🎉 [LinguaFlow] Tài khoản học viên của bạn đã được phê duyệt thành công!`)
       : encodeURIComponent(`ℹ️ [LinguaFlow] Thông báo về yêu cầu đăng ký tài khoản`);
 
     const bodyText = isApproved
-      ? `Chào bạn ${fullName},\n\nAdmin đã phê duyệt tài khoản học viên LinguaFlow của bạn thành công!\n\n👉 Bạn có thể truy cập vào học ngay tại đường link: ${appUrl}\n\nChúc bạn học tập hiệu quả!\nAdmin LinguaFlow (${ADMIN_EMAIL})`
+      ? `Chào bạn ${fullName},\n\nAdmin đã phê duyệt tài khoản học viên LinguaFlow của bạn thành công!\n\n👉 BẤM VÀO ĐÂY ĐỂ VÀO HỌC NGAY:\n${activationLink}\n\nChúc bạn học tập thật tốt!\nAdmin LinguaFlow (${ADMIN_EMAIL})`
       : `Chào bạn ${fullName},\n\nYêu cầu đăng ký tài khoản của bạn chưa được phê duyệt lúc này. Vui lòng liên hệ Admin qua email ${ADMIN_EMAIL} để biết thêm chi tiết.\n\nTrân trọng,\nAdmin LinguaFlow`;
 
     return `mailto:${studentEmail}?subject=${subject}&body=${encodeURIComponent(bodyText)}`;

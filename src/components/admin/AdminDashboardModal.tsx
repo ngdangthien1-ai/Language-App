@@ -14,9 +14,12 @@ import {
   Key,
   Crown,
   Sparkles,
-  Send
+  Send,
+  UserPlus,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
-import { authService, ADMIN_EMAIL } from '../../services/auth';
+import { authService, ADMIN_EMAIL, MASTER_UNLOCK_CODE } from '../../services/auth';
 import { UserAccount, AccountStatus } from '../../types/vocab';
 
 interface AdminDashboardModalProps {
@@ -32,15 +35,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const [students, setStudents] = useState<UserAccount[]>(authService.getAllStudents());
   const [searchQuery, setSearchQuery] = useState('');
-  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error'; mailtoUrl?: string } | null>(null);
+  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error'; mailtoUrl?: string; copyLink?: string } | null>(null);
+
+  // Manual Add Student form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [addGoal, setAddGoal] = useState('');
 
   const refreshList = () => {
     setStudents(authService.getAllStudents());
   };
 
-  const showToast = (text: string, type: 'success' | 'error' = 'success', mailtoUrl?: string) => {
-    setToast({ text, type, mailtoUrl });
-    setTimeout(() => setToast(null), 8000);
+  const showToast = (text: string, type: 'success' | 'error' = 'success', mailtoUrl?: string, copyLink?: string) => {
+    setToast({ text, type, mailtoUrl, copyLink });
+    setTimeout(() => setToast(null), 10000);
   };
 
   const handleStatusChange = (student: UserAccount, newStatus: AccountStatus) => {
@@ -48,13 +57,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     refreshList();
 
     const mailtoUrl = authService.getNotificationMailto(student.email, student.fullName, newStatus);
+    const actLink = authService.getStudentActivationLink(student.email, student.fullName);
 
     showToast(
       newStatus === 'active' 
         ? `Đã DUYỆT (Active) thành công cho: ${student.fullName} (${student.email})!` 
         : `Đã TỪ CHỐI (Decline) tài khoản: ${student.email}`,
       'success',
-      mailtoUrl
+      mailtoUrl,
+      actLink
     );
   };
 
@@ -64,6 +75,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       refreshList();
       showToast(`Đã xóa vĩnh viễn học viên: ${email}`, 'error');
     }
+  };
+
+  const handleManualAddStudent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addEmail.trim() || !addName.trim()) return;
+
+    const student = authService.upsertStudent(addEmail, addName, '123456', addGoal || 'Song ngữ Anh - Trung', 'active');
+    refreshList();
+    setShowAddForm(false);
+    setAddName('');
+    setAddEmail('');
+    setAddGoal('');
+
+    const mailtoUrl = authService.getNotificationMailto(student.email, student.fullName, 'active');
+    const actLink = authService.getStudentActivationLink(student.email, student.fullName);
+
+    showToast(`Đã thêm & DUYỆT NGAY học viên: ${student.email}`, 'success', mailtoUrl, actLink);
+  };
+
+  const handleCopyLink = (email: string, name: string) => {
+    const link = authService.getStudentActivationLink(email, name);
+    navigator.clipboard.writeText(link);
+    showToast(`Đã copy link kích hoạt của ${email} vào Clipboard! Bạn có thể gửi link này cho học viên.`, 'success');
   };
 
   const filteredStudents = students.filter(s => {
@@ -97,18 +131,80 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Phê duyệt, quản trị quyền truy cập và gửi thông báo cho học viên LinguaFlow
+                Mã mở khóa nhanh: <code className="font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-1.5 py-0.5 rounded">{MASTER_UNLOCK_CODE}</code>
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:opacity-95 text-white font-extrabold text-xs shadow-md flex items-center space-x-1.5 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>+ Thêm Học Viên Trực Tiếp</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
+
+        {/* Manual Add Student Form (Collapsible) */}
+        {showAddForm && (
+          <form onSubmit={handleManualAddStudent} className="p-4 rounded-2xl bg-brand-50 dark:bg-brand-950/40 border border-brand-200 dark:border-brand-900/60 space-y-3 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-brand-900 dark:text-brand-300 flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Thêm & Duyệt Ngay Học Viên Mới (Không cần chờ đăng ký)</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="text-slate-400 hover:text-slate-600 text-xs"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                type="text"
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                placeholder="Họ và Tên học viên..."
+                required
+                className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-brand-200 dark:border-brand-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <input
+                type="email"
+                value={addEmail}
+                onChange={(e) => setAddEmail(e.target.value)}
+                placeholder="email-hoc-vien@gmail.com"
+                required
+                className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-brand-200 dark:border-brand-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <input
+                type="text"
+                value={addGoal}
+                onChange={(e) => setAddGoal(e.target.value)}
+                placeholder="Mục tiêu học (Tùy chọn)..."
+                className="px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-brand-200 dark:border-brand-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 text-white font-bold text-xs shadow-md cursor-pointer"
+            >
+              Thêm & Kích Hoạt Cho Học Viên Này Ngay
+            </button>
+          </form>
+        )}
 
         {/* Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -242,6 +338,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                             </button>
                           )}
 
+                          {/* Copy Activation Link Button */}
+                          <button
+                            onClick={() => handleCopyLink(student.email, student.fullName)}
+                            className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 text-slate-600 dark:text-slate-300 hover:text-amber-700 transition-colors cursor-pointer"
+                            title="Copy link kích hoạt gửi riêng cho học viên"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+
                           {/* Direct Email Notify Button */}
                           <a
                             href={mailtoLink}
@@ -269,13 +374,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               </tbody>
             </table>
           ) : (
-            <div className="p-8 text-center text-slate-500 text-xs sm:text-sm">
-              Không tìm thấy học viên nào khớp với tìm kiếm.
+            <div className="p-8 text-center text-slate-500 text-xs sm:text-sm space-y-2">
+              <p>Chưa có học viên nào trong danh sách trên thiết bị này.</p>
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="text-xs font-bold text-brand-500 hover:underline"
+              >
+                + Bấm vào đây để Thêm & Kích hoạt học viên ngay
+              </button>
             </div>
           )}
         </div>
 
-        {/* Toast Alert with 1-Click Send Mail button */}
+        {/* Toast Alert with Copy Link and 1-Click Send Mail */}
         {toast && (
           <div className="fixed bottom-6 right-6 z-50 animate-slide-up max-w-md">
             <div className="p-4 rounded-2xl shadow-2xl border text-xs sm:text-sm font-bold bg-slate-900 text-white border-slate-700 space-y-2">
@@ -283,17 +394,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 <span>{toast.text}</span>
               </div>
-              {toast.mailtoUrl && (
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-end">
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-end space-x-2">
+                {toast.copyLink && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(toast.copyLink!);
+                      alert('Đã copy link kích hoạt gửi học viên!');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold text-xs flex items-center space-x-1"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Link</span>
+                  </button>
+                )}
+                {toast.mailtoUrl && (
                   <a
                     href={toast.mailtoUrl}
                     className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 text-white font-extrabold text-xs shadow-md hover:opacity-95"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>📧 Bấm để Gửi Mail Báo Học Viên (1-Click)</span>
+                    <span>📧 Gửi Mail (1-Click)</span>
                   </a>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )}

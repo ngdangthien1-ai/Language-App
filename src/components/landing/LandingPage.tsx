@@ -16,10 +16,9 @@ import {
   Layers,
   Send,
   Zap,
-  Globe2,
-  Check
+  Key
 } from 'lucide-react';
-import { authService, ADMIN_EMAIL } from '../../services/auth';
+import { authService, ADMIN_EMAIL, MASTER_UNLOCK_CODE } from '../../services/auth';
 import { UserAccount } from '../../types/vocab';
 
 interface LandingPageProps {
@@ -32,6 +31,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [unlockCode, setUnlockCode] = useState('');
+  const [showUnlockInput, setShowUnlockInput] = useState(false);
   
   // Register form state
   const [regName, setRegName] = useState('');
@@ -48,13 +49,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
     setMessage(null);
 
     try {
-      const account = await authService.login(loginEmail, loginPassword);
+      const account = await authService.login(loginEmail, loginPassword, unlockCode);
       setMessage({ text: `Đăng nhập thành công! Chào mừng ${account.fullName || account.email}.`, type: 'success' });
       setTimeout(() => {
         onLoginSuccess(account);
       }, 800);
     } catch (err: any) {
       setMessage({ text: err.message || 'Đăng nhập thất bại.', type: 'error' });
+      if (err.message?.includes('chờ Admin')) {
+        setShowUnlockInput(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -68,14 +72,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
     try {
       const res = await authService.register(regName, regEmail, regPassword, regGoal);
       setMessage({ 
-        text: `Đăng ký thành công! Yêu cầu duyệt đã được gửi trực tiếp tới Admin (${ADMIN_EMAIL}). Bạn sẽ nhận được email khi Admin kích hoạt.`, 
+        text: `Đăng ký thành công! Thông tin của bạn đã được gửi trực tiếp tới Admin (${ADMIN_EMAIL}) để phê duyệt quyền vào học.`, 
         type: 'success' 
       });
-      // Reset form
-      setRegName('');
-      setRegEmail('');
+      // Clear password for safety
       setRegPassword('');
-      setRegGoal('');
     } catch (err: any) {
       setMessage({ text: err.message || 'Đăng ký thất bại.', type: 'error' });
     } finally {
@@ -86,7 +87,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-brand-500 selection:text-white">
       
-      {/* Background Decorative Lighting */}
+      {/* Background Lighting Effect */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 w-96 h-96 bg-brand-600/20 rounded-full blur-3xl" />
         <div className="absolute top-1/3 -right-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl" />
@@ -273,6 +274,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
 
+                {/* Optional Master Unlock Code field */}
+                {showUnlockInput && (
+                  <div className="p-3 bg-amber-950/60 rounded-xl border border-amber-800 space-y-1.5 animate-fade-in">
+                    <label className="text-xs font-bold text-amber-300 flex items-center space-x-1">
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Mã Mở Khóa Nhanh (Nếu đã nhận từ Admin):</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={unlockCode}
+                      onChange={(e) => setUnlockCode(e.target.value)}
+                      placeholder="Nhập mã mở khóa (Ví dụ: 200671)"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-amber-700 text-xs font-mono text-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={loading}
@@ -291,16 +309,22 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
                   )}
                 </button>
 
-                <p className="text-[11px] text-center text-slate-500">
-                  Chưa có tài khoản?{' '}
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowUnlockInput(!showUnlockInput)}
+                    className="text-amber-400 hover:underline"
+                  >
+                    {showUnlockInput ? 'Ẩn mã mở khóa' : 'Có mã mở khóa Admin?'}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('register')}
                     className="text-brand-400 font-bold hover:underline"
                   >
-                    Đăng ký để được Admin duyệt
+                    Đăng ký tài khoản mới
                   </button>
-                </p>
+                </div>
               </form>
             )}
 
