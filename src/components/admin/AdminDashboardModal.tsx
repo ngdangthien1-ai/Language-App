@@ -13,7 +13,8 @@ import {
   Mail, 
   Key,
   Crown,
-  Sparkles
+  Sparkles,
+  Send
 } from 'lucide-react';
 import { authService, ADMIN_EMAIL } from '../../services/auth';
 import { UserAccount, AccountStatus } from '../../types/vocab';
@@ -31,25 +32,29 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const [students, setStudents] = useState<UserAccount[]>(authService.getAllStudents());
   const [searchQuery, setSearchQuery] = useState('');
-  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error'; mailtoUrl?: string } | null>(null);
 
   const refreshList = () => {
     setStudents(authService.getAllStudents());
   };
 
-  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
-    setToast({ text, type });
-    setTimeout(() => setToast(null), 3500);
+  const showToast = (text: string, type: 'success' | 'error' = 'success', mailtoUrl?: string) => {
+    setToast({ text, type, mailtoUrl });
+    setTimeout(() => setToast(null), 8000);
   };
 
-  const handleStatusChange = (email: string, newStatus: AccountStatus) => {
-    authService.updateStudentStatus(email, newStatus);
+  const handleStatusChange = (student: UserAccount, newStatus: AccountStatus) => {
+    authService.updateStudentStatus(student.email, newStatus);
     refreshList();
+
+    const mailtoUrl = authService.getNotificationMailto(student.email, student.fullName, newStatus);
+
     showToast(
       newStatus === 'active' 
-        ? `Đã DUYỆT (Active) tài khoản: ${email}` 
-        : `Đã TỪ CHỐI (Decline) tài khoản: ${email}`,
-      'success'
+        ? `Đã DUYỆT (Active) thành công cho: ${student.fullName} (${student.email})!` 
+        : `Đã TỪ CHỐI (Decline) tài khoản: ${student.email}`,
+      'success',
+      mailtoUrl
     );
   };
 
@@ -92,14 +97,14 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Phê duyệt, quản trị quyền truy cập và xóa tài khoản học viên LinguaFlow
+                Phê duyệt, quản trị quyền truy cập và gửi thông báo cho học viên LinguaFlow
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
           >
             <X className="w-6 h-6" />
           </button>
@@ -165,86 +170,102 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredStudents.map((student) => (
-                  <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    
-                    {/* Name & Email */}
-                    <td className="p-3.5">
-                      <div>
-                        <p className="font-extrabold text-slate-900 dark:text-white">
-                          {student.fullName}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                          {student.email}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          Đăng ký: {student.registeredAt}
-                        </p>
-                      </div>
-                    </td>
+                {filteredStudents.map((student) => {
+                  const mailtoLink = authService.getNotificationMailto(student.email, student.fullName, student.status);
 
-                    {/* Study Goal */}
-                    <td className="p-3.5 hidden sm:table-cell text-slate-600 dark:text-slate-300">
-                      {student.studyGoal || 'Học từ vựng song ngữ'}
-                    </td>
+                  return (
+                    <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                      
+                      {/* Name & Email */}
+                      <td className="p-3.5">
+                        <div>
+                          <p className="font-extrabold text-slate-900 dark:text-white">
+                            {student.fullName}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                            {student.email}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Đăng ký: {student.registeredAt}
+                          </p>
+                        </div>
+                      </td>
 
-                    {/* Status Badge */}
-                    <td className="p-3.5">
-                      {student.status === 'active' ? (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-xs">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Đang học (Active)</span>
-                        </span>
-                      ) : student.status === 'pending' ? (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold text-xs">
-                          <Clock className="w-3 h-3" />
-                          <span>Chờ duyệt</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold text-xs">
-                          <UserX className="w-3 h-3" />
-                          <span>Từ chối</span>
-                        </span>
-                      )}
-                    </td>
+                      {/* Study Goal */}
+                      <td className="p-3.5 hidden sm:table-cell text-slate-600 dark:text-slate-300">
+                        {student.studyGoal || 'Học từ vựng song ngữ'}
+                      </td>
 
-                    {/* Actions */}
-                    <td className="p-3.5 text-right">
-                      <div className="flex items-center justify-end space-x-1.5">
-                        
-                        {student.status !== 'active' && (
-                          <button
-                            onClick={() => handleStatusChange(student.email, 'active')}
-                            className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
-                            title="Duyệt cho học viên vào học"
-                          >
-                            Duyệt
-                          </button>
+                      {/* Status Badge */}
+                      <td className="p-3.5">
+                        {student.status === 'active' ? (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold text-xs">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Đang học (Active)</span>
+                          </span>
+                        ) : student.status === 'pending' ? (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold text-xs">
+                            <Clock className="w-3 h-3" />
+                            <span>Chờ duyệt</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold text-xs">
+                            <UserX className="w-3 h-3" />
+                            <span>Từ chối</span>
+                          </span>
                         )}
+                      </td>
 
-                        {student.status !== 'declined' && (
-                          <button
-                            onClick={() => handleStatusChange(student.email, 'declined')}
-                            className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-rose-100 hover:text-rose-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
-                            title="Từ chối yêu cầu"
+                      {/* Actions */}
+                      <td className="p-3.5 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          
+                          {/* Approve Button */}
+                          {student.status !== 'active' && (
+                            <button
+                              onClick={() => handleStatusChange(student, 'active')}
+                              className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors cursor-pointer"
+                              title="Duyệt cho học viên vào học"
+                            >
+                              Duyệt
+                            </button>
+                          )}
+
+                          {/* Decline Button */}
+                          {student.status !== 'declined' && (
+                            <button
+                              onClick={() => handleStatusChange(student, 'declined')}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-rose-100 hover:text-rose-700 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
+                              title="Từ chối yêu cầu"
+                            >
+                              Từ chối
+                            </button>
+                          )}
+
+                          {/* Direct Email Notify Button */}
+                          <a
+                            href={mailtoLink}
+                            className="p-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition-colors"
+                            title="Gửi email thông báo kết quả trực tiếp cho học viên này"
                           >
-                            Từ chối
+                            <Mail className="w-4 h-4" />
+                          </a>
+
+                          {/* Delete Account Button */}
+                          <button
+                            onClick={() => handleDelete(student.email, student.fullName)}
+                            className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
+                            title="Xóa vĩnh viễn tài khoản học viên"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
-                        )}
 
-                        <button
-                          onClick={() => handleDelete(student.email, student.fullName)}
-                          className="p-1.5 rounded-xl text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-colors cursor-pointer"
-                          title="Xóa vĩnh viễn tài khoản học viên"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        </div>
+                      </td>
 
-                      </div>
-                    </td>
-
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
@@ -254,13 +275,25 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           )}
         </div>
 
-        {/* Toast Alert */}
+        {/* Toast Alert with 1-Click Send Mail button */}
         {toast && (
-          <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
-            <div className={`px-4 py-3 rounded-2xl shadow-xl border text-xs sm:text-sm font-bold text-white ${
-              toast.type === 'success' ? 'bg-emerald-800 border-emerald-600' : 'bg-rose-800 border-rose-600'
-            }`}>
-              {toast.text}
+          <div className="fixed bottom-6 right-6 z-50 animate-slide-up max-w-md">
+            <div className="p-4 rounded-2xl shadow-2xl border text-xs sm:text-sm font-bold bg-slate-900 text-white border-slate-700 space-y-2">
+              <div className="flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>{toast.text}</span>
+              </div>
+              {toast.mailtoUrl && (
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-end">
+                  <a
+                    href={toast.mailtoUrl}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 text-white font-extrabold text-xs shadow-md hover:opacity-95"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>📧 Bấm để Gửi Mail Báo Học Viên (1-Click)</span>
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         )}

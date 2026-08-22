@@ -50,7 +50,7 @@ class AuthService {
         const cleanEmail = decodeURIComponent(email).toLowerCase();
         if (action === 'approve') {
           this.updateStudentStatus(cleanEmail, 'active');
-          alert(`ĐÃ DUYỆT THÀNH CÔNG TÀI KHOẢN: ${cleanEmail}\nHọc viên này đã có thể đăng nhập vào ứng dụng!`);
+          alert(`🎉 ĐÃ DUYỆT THÀNH CÔNG TÀI KHOẢN: ${cleanEmail}\nHọc viên này đã có thể đăng nhập vào ứng dụng ngay!`);
         } else if (action === 'decline') {
           this.updateStudentStatus(cleanEmail, 'declined');
           alert(`ĐÃ TỪ CHỐI TÀI KHOẢN: ${cleanEmail}`);
@@ -111,7 +111,7 @@ class AuthService {
   }
 
   /**
-   * Đăng ký tài khoản học viên & Tự động gửi Email duyệt với 2 link ACTIVE / DECLINE
+   * Đăng ký tài khoản học viên & Tự động gửi Email duyệt với 2 link ACTIVE / DECLINE tới Admin
    */
   public async register(
     fullName: string,
@@ -168,6 +168,7 @@ class AuthService {
           "👉 BẤM ĐỂ DUYỆT (ACTIVE)": approveUrl,
           "👉 BẤM ĐỂ TỪ CHỐI (DECLINE)": declineUrl,
           "Ghi Chú Admin": "Bạn có thể bấm trực tiếp vào link trên hoặc đăng nhập tài khoản Admin trên web để quản lý danh sách học viên.",
+          _replyto: cleanEmail,
           _captcha: "false",
           _template: "table"
         })
@@ -234,9 +235,6 @@ class AuthService {
     if (target) {
       target.status = status;
       this.saveAllAccounts(accounts);
-
-      // Gửi email thông báo kết quả cho học viên
-      this.sendStudentStatusEmail(target.fullName, target.email, status);
     }
   }
 
@@ -248,8 +246,8 @@ class AuthService {
 
     // Xóa kho từ vựng riêng của học viên này
     try {
-      localStorage.removeItem(`lingua_flow_words_${cleanEmail}_v1`);
-      localStorage.removeItem(`lingua_flow_key_${cleanEmail}_v1`);
+      localStorage.removeItem(`lingua_flow_words_${cleanEmail}_v3`);
+      localStorage.removeItem(`lingua_flow_key_${cleanEmail}_v3`);
     } catch (e) {
       // ignore
     }
@@ -269,38 +267,24 @@ class AuthService {
       session.aiKey = aiKey.trim();
       this.setSessionUser(session);
     }
-
-    try {
-      localStorage.setItem(`lingua_flow_key_${cleanEmail}_v1`, aiKey.trim());
-    } catch (e) {
-      // ignore
-    }
   }
 
-  private async sendStudentStatusEmail(fullName: string, studentEmail: string, status: AccountStatus): Promise<void> {
-    try {
-      const isApproved = status === 'active';
-      const appUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://ngdangthien1-ai.github.io/Language-App/';
+  /**
+   * Tạo link Gmail / Mailto 1-Click gửi email thông báo kết quả duyệt trực tiếp từ Admin
+   */
+  public getNotificationMailto(studentEmail: string, fullName: string, status: AccountStatus): string {
+    const isApproved = status === 'active';
+    const appUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://ngdangthien1-ai.github.io/Language-App/';
+    
+    const subject = isApproved
+      ? encodeURIComponent(`🎉 [LinguaFlow] Tài khoản học viên của bạn đã được phê duyệt thành công!`)
+      : encodeURIComponent(`ℹ️ [LinguaFlow] Thông báo về yêu cầu đăng ký tài khoản`);
 
-      await fetch(`https://formsubmit.co/ajax/${studentEmail}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          _subject: isApproved 
-            ? `🎉 [LINGUAFLOW] Tài khoản của bạn đã được Admin phê duyệt thành công!`
-            : `ℹ️ [LINGUAFLOW] Thông báo về yêu cầu đăng ký tài khoản`,
-          "Học Viên": fullName,
-          "Kết Quả Phê Duyệt": isApproved ? "CHÍNH THỨC ĐƯỢC DUYỆT (ACTIVE)" : "TỪ CHỐI (DECLINED)",
-          "Link Vào Học Ngay": isApproved ? appUrl : "Vui lòng liên hệ Admin qua email: " + ADMIN_EMAIL,
-          _captcha: "false"
-        })
-      });
-    } catch (e) {
-      console.warn('Send student email error:', e);
-    }
+    const bodyText = isApproved
+      ? `Chào bạn ${fullName},\n\nAdmin đã phê duyệt tài khoản học viên LinguaFlow của bạn thành công!\n\n👉 Bạn có thể truy cập vào học ngay tại đường link: ${appUrl}\n\nChúc bạn học tập hiệu quả!\nAdmin LinguaFlow (${ADMIN_EMAIL})`
+      : `Chào bạn ${fullName},\n\nYêu cầu đăng ký tài khoản của bạn chưa được phê duyệt lúc này. Vui lòng liên hệ Admin qua email ${ADMIN_EMAIL} để biết thêm chi tiết.\n\nTrân trọng,\nAdmin LinguaFlow`;
+
+    return `mailto:${studentEmail}?subject=${subject}&body=${encodeURIComponent(bodyText)}`;
   }
 }
 
