@@ -5,6 +5,7 @@ import { formatDateVi, getTodayDateString } from '../utils/dates';
 const STORAGE_KEYS = {
   WORDS: 'lingua_flow_words_v1',
   SETTINGS: 'lingua_flow_settings_v1',
+  API_KEY: 'lingua_flow_gemini_api_key_v1',
 };
 
 export const INITIAL_SETTINGS: AppSettings = {
@@ -58,7 +59,7 @@ const SEED_WORDS: VocabWord[] = [
           }
         ],
         collocations: ['code of conduct', 'professional conduct', 'improper conduct'],
-        synonyms: ['behavior', 'manner', 'etiquette']
+        synonyms: ['behavior', 'manner', 'deportment']
       }
     ],
     dateAdded: getTodayDateString(),
@@ -78,31 +79,31 @@ const SEED_WORDS: VocabWord[] = [
     posEntries: [
       {
         id: 'seed-pos-zh-1-1',
-        pos: 'Verb / Adj',
-        posVi: 'Động từ / Tính từ (đọc: xíng)',
+        pos: 'Verb / Adj (xíng)',
+        posVi: 'Động từ / Tính từ',
         phonetic: 'xíng',
-        meaningVi: 'Đi, đi lại; Được, có thể, xuất sắc',
+        meaningVi: 'Đi, thực hiện, được, ổn thỏa, giỏi',
         examples: [
           {
-            original: '我们明天下午去游泳，行吗？',
-            pinyin: 'Wǒmen míngtiān xiàwǔ qù yóuyǒng, xíng ma?',
-            translation: 'Chiều mai chúng mình đi bơi, được không?'
+            original: '我们明天去公园，你觉得行吗？',
+            pinyin: 'Wǒmen míngtiān qù gōngyuán, nǐ juéde xíng ma?',
+            translation: 'Ngày mai chúng ta đi công viên, bạn thấy được không?'
           },
           {
-            original: '你真行，这么快就解决了！',
-            pinyin: 'Nǐ zhēn xíng, zhème kuài jiù jiějué le!',
-            translation: 'Bạn giỏi thật đấy, giải quyết nhanh như vậy!'
+            original: '他的汉语说得很行！',
+            pinyin: 'Tā de hànyǔ shuō de hěn xíng!',
+            translation: 'Tiếng Trung của anh ấy nói rất cừ!'
           }
         ],
-        collocations: ['步行 (bùxíng - đi bộ)', '行为 (xíngwéi - hành vi)'],
-        synonyms: ['可以 (kěyǐ)', '棒 (bàng)']
+        collocations: ['不行 (không được)', '行动 (hành động)', '行人 (người đi bộ)'],
+        synonyms: ['可以', '好']
       },
       {
         id: 'seed-pos-zh-1-2',
-        pos: 'Noun / Measure Word',
-        posVi: 'Danh từ / Lượng từ (đọc: háng)',
+        pos: 'Noun (háng)',
+        posVi: 'Danh từ',
         phonetic: 'háng',
-        meaningVi: 'Hàng, dòng, nghề nghiệp, ngành nghề',
+        meaningVi: 'Hàng (lối), dòng kẻ, ngành nghề, ngân hàng',
         examples: [
           {
             original: '请大家排成一行。',
@@ -110,12 +111,13 @@ const SEED_WORDS: VocabWord[] = [
             translation: 'Xin mọi người hãy xếp thành một hàng.'
           },
           {
-            original: '他从事银行工作很多年了。',
-            pinyin: 'Tā cóngshì yínháng gōngzuò hěn duō nián le.',
-            translation: 'Anh ấy làm việc trong ngành ngân hàng đã nhiều năm.'
+            original: '中国银行就在前面。',
+            pinyin: 'Zhōngguó Yínháng jiù zài qiánmiàn.',
+            translation: 'Ngân hàng Trung Quốc ở ngay phía trước.'
           }
         ],
-        collocations: ['行业 (hángyè - ngành nghề)', '银行 (yínháng - ngân hàng)', '第一行 (dì yī háng - dòng đầu tiên)']
+        collocations: ['银行 (ngân hàng)', '行业 (ngành nghề)', '一行字 (một dòng chữ)'],
+        synonyms: ['列', '业']
       }
     ],
     dateAdded: getTodayDateString(),
@@ -181,7 +183,7 @@ const SEED_WORDS: VocabWord[] = [
     ],
     dateAdded: getTodayDateString(),
     timestamp: Date.now() - 1000 * 60 * 5,
-    tags: ['Tiếng Trung', 'HSK 3'],
+    tags: ['Tiếng Trung', 'HSK 3', 'Từ vựng quan trọng'],
     isStarred: false,
     mastery: 'learning',
   }
@@ -192,13 +194,13 @@ export const storageService = {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.WORDS);
       if (!data) {
-        // Initialize with seed data
         this.saveWords(SEED_WORDS);
         return SEED_WORDS;
       }
-      return JSON.parse(data);
+      const parsed: VocabWord[] = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : SEED_WORDS;
     } catch (e) {
-      console.error('Failed to load words from storage', e);
+      console.error('Failed to load words from localStorage', e);
       return SEED_WORDS;
     }
   },
@@ -207,21 +209,22 @@ export const storageService = {
     try {
       localStorage.setItem(STORAGE_KEYS.WORDS, JSON.stringify(words));
     } catch (e) {
-      console.error('Failed to save words to storage', e);
+      console.error('Failed to save words to localStorage', e);
     }
   },
 
   addWord(word: VocabWord): VocabWord[] {
     const words = this.getWords();
-    // Add to beginning
-    const updated = [word, ...words.filter(w => w.id !== word.id && w.word.toLowerCase() !== word.word.toLowerCase())];
-    this.saveWords(updated);
-    return updated;
-  },
-
-  updateWord(updatedWord: VocabWord): VocabWord[] {
-    const words = this.getWords();
-    const updated = words.map(w => (w.id === updatedWord.id ? updatedWord : w));
+    const existingIndex = words.findIndex(w => w.word.toLowerCase() === word.word.toLowerCase() && w.language === word.language);
+    
+    let updated: VocabWord[];
+    if (existingIndex >= 0) {
+      updated = [...words];
+      updated[existingIndex] = { ...word, id: words[existingIndex].id, timestamp: Date.now() };
+    } else {
+      updated = [word, ...words];
+    }
+    
     this.saveWords(updated);
     return updated;
   },
@@ -278,8 +281,13 @@ export const storageService = {
   getSettings(): AppSettings {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      if (!data) return INITIAL_SETTINGS;
-      return { ...INITIAL_SETTINGS, ...JSON.parse(data) };
+      const customKey = localStorage.getItem(STORAGE_KEYS.API_KEY);
+      const parsed = data ? JSON.parse(data) : {};
+      return { 
+        ...INITIAL_SETTINGS, 
+        ...parsed,
+        geminiApiKey: customKey || parsed.geminiApiKey || DEFAULT_GEMINI_KEY
+      };
     } catch (e) {
       return INITIAL_SETTINGS;
     }
@@ -288,6 +296,9 @@ export const storageService = {
   saveSettings(settings: AppSettings): void {
     try {
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+      if (settings.geminiApiKey) {
+        localStorage.setItem(STORAGE_KEYS.API_KEY, settings.geminiApiKey);
+      }
     } catch (e) {
       console.error('Failed to save settings', e);
     }
@@ -298,52 +309,46 @@ export const storageService = {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(words, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `linguaflow-backup-${getTodayDateString()}.json`);
+    downloadAnchor.setAttribute('download', `linguaflow_backup_${getTodayDateString()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
   },
 
+  importFromJSON(jsonString: string): VocabWord[] {
+    try {
+      const imported: VocabWord[] = JSON.parse(jsonString);
+      if (Array.isArray(imported)) {
+        this.saveWords(imported);
+        return imported;
+      }
+      throw new Error('Định dạng file không hợp lệ.');
+    } catch (e) {
+      throw new Error('Không thể đọc file JSON.');
+    }
+  },
+
   exportToCSV(): void {
     const words = this.getWords();
-    const headers = ['Từ vựng', 'Ngôn ngữ', 'Phiên âm', 'Cấp độ', 'Loại từ', 'Nghĩa tiếng Việt', 'Ví dụ', 'Dịch ví dụ', 'Ngày thêm'];
-    
-    const rows = words.flatMap(w => {
-      return w.posEntries.map(pos => [
-        `"${w.word.replace(/"/g, '""')}"`,
-        w.language === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh',
-        `"${(pos.phonetic || w.phonetic).replace(/"/g, '""')}"`,
-        w.level || '',
-        `"${pos.posVi} (${pos.pos})"`,
-        `"${pos.meaningVi.replace(/"/g, '""')}"`,
-        `"${(pos.examples[0]?.original || '').replace(/"/g, '""')}"`,
-        `"${(pos.examples[0]?.translation || '').replace(/"/g, '""')}"`,
-        w.dateAdded
-      ]);
-    });
+    const headers = ['Từ', 'Ngôn ngữ', 'Phiên âm', 'Trình độ', 'Từ loại & Nghĩa tiếng Việt', 'Câu ví dụ', 'Ngày lưu'];
+    const rows = words.map(w => [
+      `"${w.word.replace(/"/g, '""')}"`,
+      `"${w.language === 'en' ? 'Tiếng Anh' : 'Tiếng Trung'}"`,
+      `"${(w.phonetic || '').replace(/"/g, '""')}"`,
+      `"${w.level || ''}"`,
+      `"${w.posEntries.map(p => `[${p.posVi || p.pos}] ${p.meaningVi}`).join(' | ').replace(/"/g, '""')}"`,
+      `"${w.posEntries.flatMap(p => p.examples.map(e => `${e.original} -> ${e.translation}`)).join(' | ').replace(/"/g, '""')}"`,
+      `"${w.dateAdded || ''}"`
+    ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `tu-vung-linguaflow-${getTodayDateString()}.csv`);
+    link.setAttribute('download', `linguaflow_vocab_${getTodayDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     link.remove();
-  },
-
-  importFromJSON(jsonString: string): boolean {
-    try {
-      const parsed = JSON.parse(jsonString);
-      if (Array.isArray(parsed)) {
-        this.saveWords(parsed);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      console.error('Import error:', e);
-      return false;
-    }
   }
 };
