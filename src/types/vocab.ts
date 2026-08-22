@@ -1,13 +1,17 @@
 export type Language = 'en' | 'zh';
 
-export type UserMode = 'guest' | 'authenticated';
+export type UserRole = 'admin' | 'student';
+export type AccountStatus = 'active' | 'pending' | 'declined';
 
 export interface UserAccount {
+  id: string;
   email: string;
-  fullName?: string;
-  isApproved: boolean;
+  fullName: string;
+  role: UserRole;
+  status: AccountStatus;
   registeredAt: string;
-  geminiApiKey?: string;
+  aiKey?: string;
+  studyGoal?: string;
 }
 
 export interface ExampleSentence {

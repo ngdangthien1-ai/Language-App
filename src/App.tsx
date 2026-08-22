@@ -3,19 +3,18 @@ import {
   Plus, 
   Sparkles, 
   BookOpen, 
-  Calendar, 
-  AlertCircle, 
-  CheckCircle2, 
   GraduationCap,
   Layers,
   Heart,
   Globe2,
   Trash2,
   Crown,
-  Send,
-  ShieldCheck
+  Key,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
-import { VocabWord, Language, AppSettings, DailyVocabGroup, UserAccount, UserMode } from './types/vocab';
+import { VocabWord, Language, AppSettings, DailyVocabGroup, UserAccount } from './types/vocab';
 import { storageService } from './services/storage';
 import { lookupWordWithGemini } from './services/gemini';
 import { authService, ADMIN_EMAIL } from './services/auth';
@@ -27,22 +26,24 @@ import { DailyGroup } from './components/notebook/DailyGroup';
 import { FilterBar } from './components/notebook/FilterBar';
 import { QuizModal } from './components/quiz/QuizModal';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { RegistrationModal } from './components/auth/RegistrationModal';
+import { LandingPage } from './components/landing/LandingPage';
+import { AdminDashboardModal } from './components/admin/AdminDashboardModal';
+import { KeyActivationModal } from './components/auth/KeyActivationModal';
 import { getTodayDateString } from './utils/dates';
 
 export const App: React.FC = () => {
-  // State
+  // Session User State
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(authService.getSessionUser());
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+  const [isKeyActivationOpen, setIsKeyActivationOpen] = useState(false);
+
+  // App State
   const [words, setWords] = useState<VocabWord[]>([]);
   const [settings, setSettings] = useState<AppSettings>(storageService.getSettings());
   const [currentLangFilter, setCurrentLangFilter] = useState<'all' | Language>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [masteryFilter, setMasteryFilter] = useState<'all' | VocabWord['mastery']>('all');
   const [starredOnly, setStarredOnly] = useState(false);
-
-  // User Mode & Auth State (Học Thử vs Đăng Ký Học Thật)
-  const [userMode, setUserMode] = useState<UserMode>(authService.getUserMode());
-  const [currentAccount, setCurrentAccount] = useState<UserAccount | null>(authService.getCurrentAccount());
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // AI Lookup State
   const [isSearchingAI, setIsSearchingAI] = useState(false);
@@ -68,11 +69,13 @@ export const App: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Load words from storage on mount
+  // Reload words when user changes
   useEffect(() => {
-    const loadedWords = storageService.getWords();
-    setWords(loadedWords);
-  }, []);
+    if (currentUser) {
+      const loadedWords = storageService.getWords(currentUser.email);
+      setWords(loadedWords);
+    }
+  }, [currentUser]);
 
   // Sync Dark Mode class on <html>
   useEffect(() => {
@@ -95,39 +98,57 @@ export const App: React.FC = () => {
     showToast('Đã lưu cấu hình cài đặt!', 'success');
   };
 
+  const handleLogout = () => {
+    authService.logout();
+    setCurrentUser(null);
+    showToast('Đã đăng xuất tài khoản.', 'success');
+  };
+
   // Perform AI Lookup
   const handlePerformLookup = async (inputWord: string, targetLang?: Language) => {
+    if (!currentUser) return;
+    
+    const activeKey = currentUser.aiKey || settings.geminiApiKey;
+    if (!activeKey) {
+      setIsKeyActivationOpen(true);
+      return;
+    }
+
     setIsSearchingAI(true);
     try {
-      const result = await lookupWordWithGemini(inputWord, targetLang, settings.geminiApiKey);
+      const result = await lookupWordWithGemini(inputWord, targetLang, activeKey);
       setPreviewWord(result);
     } catch (err: any) {
       console.error('Lookup failed:', err);
-      showToast(err.message || 'Không thể tra cứu từ này. Vui lòng kiểm tra lại mạng hoặc API Key.', 'error');
+      showToast(err.message || 'Không thể tra cứu từ này. Vui lòng kiểm tra lại mạng hoặc Key AI.', 'error');
     } finally {
       setIsSearchingAI(false);
     }
   };
 
-  // Word CRUD
+  // Word CRUD (Account Scoped)
   const handleSaveWord = (wordToSave: VocabWord) => {
-    const updated = storageService.addWord(wordToSave);
+    if (!currentUser) return;
+    const updated = storageService.addWord(wordToSave, currentUser.email);
     setWords(updated);
     showToast(`Đã lưu "${wordToSave.word}" vào sổ tay hôm nay!`, 'success');
   };
 
   const handleToggleStar = (id: string) => {
-    const updated = storageService.toggleStar(id);
+    if (!currentUser) return;
+    const updated = storageService.toggleStar(id, currentUser.email);
     setWords(updated);
   };
 
   const handleSetMastery = (id: string, mastery: VocabWord['mastery']) => {
-    const updated = storageService.setMastery(id, mastery);
+    if (!currentUser) return;
+    const updated = storageService.setMastery(id, mastery, currentUser.email);
     setWords(updated);
   };
 
   const handleDeleteWord = (id: string) => {
-    const updated = storageService.deleteWord(id);
+    if (!currentUser) return;
+    const updated = storageService.deleteWord(id, currentUser.email);
     setWords(updated);
     showToast('Đã xóa từ khỏi sổ tay.', 'success');
   };
@@ -207,6 +228,18 @@ export const App: React.FC = () => {
     return words.filter((w) => w.dateAdded === todayDateStr).length;
   }, [words, todayDateStr]);
 
+  // 1. IF NOT LOGGED IN -> RENDER LANDING PAGE
+  if (!currentUser) {
+    return (
+      <LandingPage
+        onLoginSuccess={(account) => {
+          setCurrentUser(account);
+        }}
+      />
+    );
+  }
+
+  // 2. LOGGED IN -> RENDER FULL LINGUAFLOW APP
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col selection:bg-brand-500 selection:text-white transition-colors duration-200 pb-20 md:pb-0">
       
@@ -218,9 +251,10 @@ export const App: React.FC = () => {
         onToggleDarkMode={handleToggleDarkMode}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGlobalQuiz={handleOpenGlobalQuiz}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        userMode={userMode}
-        currentAccount={currentAccount}
+        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
+        onOpenKeyActivation={() => setIsKeyActivationOpen(true)}
+        onLogout={handleLogout}
+        currentUser={currentUser}
         todayCount={todayWordsCount}
         totalCount={words.length}
       />
@@ -228,33 +262,44 @@ export const App: React.FC = () => {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
         
-        {/* Trial Mode Welcome Banner (If guest) */}
-        {userMode === 'guest' && (
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-orange-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm animate-fade-in">
-            <div className="flex items-center space-x-2.5 text-amber-900 dark:text-amber-200">
-              <Sparkles className="w-5 h-5 text-amber-500 flex-shrink-0 animate-bounce" />
-              <span>
-                Bạn đang ở <strong>Chế độ Học Thử Miễn Phí</strong>. Đăng ký tài khoản học thật để được Admin ({ADMIN_EMAIL}) duyệt quyền đồng bộ đa thiết bị!
+        {/* Welcome Account Strip */}
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm shadow-sm animate-fade-in">
+          <div className="flex items-center space-x-2.5">
+            {currentUser.role === 'admin' ? (
+              <Crown className="w-5 h-5 text-amber-500 flex-shrink-0" />
+            ) : (
+              <ShieldCheck className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+            )}
+            <div>
+              <span className="font-extrabold text-slate-900 dark:text-white">
+                {currentUser.fullName || currentUser.email}
+              </span>
+              <span className="text-slate-500 dark:text-slate-400 ml-2">
+                • {currentUser.role === 'admin' ? 'Quản Trị Viên Master' : `Học viên chính thức (${currentUser.studyGoal || 'Song ngữ'})`}
               </span>
             </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
             <button
-              onClick={() => setIsAuthOpen(true)}
-              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-md shadow-orange-500/20 whitespace-nowrap cursor-pointer transition-transform active:scale-95"
+              onClick={() => setIsKeyActivationOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-700 dark:text-slate-300 hover:text-amber-600 text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1.5"
             >
-              👑 Đăng Ký Học Thật Ngay
+              <Key className="w-3.5 h-3.5 text-amber-500" />
+              <span>Key AI: {currentUser.aiKey ? '🟢 Đã kích hoạt' : '🔴 Chưa nhập'}</span>
             </button>
           </div>
-        )}
+        </div>
 
         {/* Hero & Quick AI Search Bar */}
         <section ref={searchSectionRef} className="text-center space-y-4 pt-2">
           <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-200/60 dark:border-brand-900/50 text-brand-700 dark:text-brand-300 text-xs font-bold">
             <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" />
-            <span>Phân tích tự động đa từ loại & Phiên âm chuẩn xác bởi Gemini AI</span>
+            <span>Phân tích tự động đa từ loại & Phiên âm chuẩn xác bởi AI Studio</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
-            Ghi Chú Từ Vựng Thông Minh
+            Sổ Tay Từ Vựng Thông Minh
           </h1>
           <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 max-w-2xl mx-auto">
             Chỉ cần nhập từ — hệ thống tự động bóc tách phiên âm, đa loại từ, dịch nghĩa tiếng Việt, câu ví dụ và phát âm chuẩn bản xứ.
@@ -281,7 +326,7 @@ export const App: React.FC = () => {
                 <span>Sổ Tay Từ Vựng Theo Ngày</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Hiển thị {filteredWords.length} / {words.length} từ đã lưu {currentAccount && `• 🟢 ${currentAccount.fullName || currentAccount.email}`}
+                Hiển thị {filteredWords.length} / {words.length} từ đã lưu trong tài khoản của bạn
               </p>
             </div>
 
@@ -329,7 +374,7 @@ export const App: React.FC = () => {
                 <BookOpen className="w-8 h-8" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Không tìm thấy từ vựng nào</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Chưa có từ vựng nào</h3>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
                   {searchQuery || masteryFilter !== 'all' || starredOnly
                     ? 'Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm.'
@@ -348,12 +393,7 @@ export const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© 2026 LinguaFlow — Sổ Tay Từ Vựng Song Ngữ Thông Minh & Quiz Hàng Ngày</p>
           <div className="flex items-center space-x-3">
-            <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{userMode === 'authenticated' ? 'Đã kích hoạt Tài khoản Học Thật' : 'Chế độ Học Thử Miễn Phí'}</span>
-            </span>
-            <span>•</span>
-            <span className="font-semibold text-brand-600 dark:text-brand-400">Admin: {ADMIN_EMAIL}</span>
+            <span className="font-semibold text-brand-600 dark:text-brand-400">Admin Quản Trị: {ADMIN_EMAIL}</span>
           </div>
         </div>
       </footer>
@@ -365,10 +405,10 @@ export const App: React.FC = () => {
         onLanguageChange={setCurrentLangFilter}
         onOpenSearch={handleMobileOpenSearch}
         onOpenQuiz={handleOpenGlobalQuiz}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        userMode={userMode}
-        currentAccount={currentAccount}
+        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
+        onOpenKeyActivation={() => setIsKeyActivationOpen(true)}
+        onLogout={handleLogout}
+        currentUser={currentUser}
         wordCount={words.length}
       />
 
@@ -398,26 +438,32 @@ export const App: React.FC = () => {
           settings={settings}
           onSaveSettings={handleSaveSettings}
           onClose={() => setIsSettingsOpen(false)}
-          onDataImported={() => setWords(storageService.getWords())}
+          onDataImported={() => {
+            if (currentUser) setWords(storageService.getWords(currentUser.email));
+          }}
         />
       )}
 
-      {/* Registration & Mode Modal */}
-      <RegistrationModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        userMode={userMode}
-        currentAccount={currentAccount}
-        onModeChange={(mode, account) => {
-          setUserMode(mode);
-          setCurrentAccount(account);
-          if (account) {
-            showToast(`Đã kích hoạt chế độ Học Thật cho: ${account.fullName || account.email}`, 'success');
-          } else {
-            showToast('Đang ở chế độ Học Thử', 'success');
-          }
-        }}
-      />
+      {/* Admin Dashboard Modal */}
+      {currentUser.role === 'admin' && (
+        <AdminDashboardModal
+          isOpen={isAdminDashboardOpen}
+          onClose={() => setIsAdminDashboardOpen(false)}
+        />
+      )}
+
+      {/* Key Activation Modal */}
+      {(!currentUser.aiKey || isKeyActivationOpen) && (
+        <KeyActivationModal
+          isOpen={!currentUser.aiKey || isKeyActivationOpen}
+          user={currentUser}
+          onActivated={(updated) => {
+            setCurrentUser(updated);
+            setIsKeyActivationOpen(false);
+            showToast('Đã kích hoạt Key AI thành công!', 'success');
+          }}
+        />
+      )}
 
       {/* Toast Notification Alert */}
       {toastMessage && (

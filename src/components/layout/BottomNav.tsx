@@ -4,10 +4,11 @@ import {
   Search, 
   GraduationCap, 
   Crown, 
-  Settings,
-  ShieldCheck
+  Key,
+  LogOut,
+  Users
 } from 'lucide-react';
-import { Language, UserAccount, UserMode } from '../../types/vocab';
+import { Language, UserAccount } from '../../types/vocab';
 
 interface BottomNavProps {
   activeTab: 'notebook' | 'search';
@@ -15,10 +16,10 @@ interface BottomNavProps {
   onLanguageChange: (lang: 'all' | Language) => void;
   onOpenSearch: () => void;
   onOpenQuiz: () => void;
-  onOpenAuth: () => void;
-  onOpenSettings: () => void;
-  userMode: UserMode;
-  currentAccount: UserAccount | null;
+  onOpenAdminDashboard: () => void;
+  onOpenKeyActivation: () => void;
+  onLogout: () => void;
+  currentUser: UserAccount;
   wordCount: number;
 }
 
@@ -27,12 +28,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onLanguageChange,
   onOpenSearch,
   onOpenQuiz,
-  onOpenAuth,
-  onOpenSettings,
-  userMode,
-  currentAccount,
+  onOpenAdminDashboard,
+  onOpenKeyActivation,
+  onLogout,
+  currentUser,
   wordCount,
 }) => {
+  const isAdmin = currentUser.role === 'admin';
+
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800 px-3 py-2">
       <div className="flex items-center justify-around max-w-lg mx-auto">
@@ -81,34 +84,32 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span className="text-[10px] font-bold mt-1">Luyện Quiz</span>
         </button>
 
-        {/* Mode / Account Button */}
-        <button
-          onClick={onOpenAuth}
-          className={`flex flex-col items-center justify-center p-1.5 rounded-2xl transition-colors ${
-            userMode === 'authenticated' && currentAccount
-              ? 'text-emerald-600 dark:text-emerald-400 font-bold'
-              : 'text-amber-600 dark:text-amber-400'
-          }`}
-        >
-          <div className="relative">
-            {userMode === 'authenticated' && currentAccount ? (
-              <ShieldCheck className="w-5 h-5 text-emerald-500" />
-            ) : (
-              <Crown className="w-5 h-5 text-amber-500" />
-            )}
-          </div>
-          <span className="text-[10px] font-bold mt-1">
-            {userMode === 'authenticated' ? 'Học thật' : 'Đăng ký'}
-          </span>
-        </button>
+        {/* Admin Dashboard or Key AI */}
+        {isAdmin ? (
+          <button
+            onClick={onOpenAdminDashboard}
+            className="flex flex-col items-center justify-center p-1.5 rounded-2xl text-amber-600 dark:text-amber-400"
+          >
+            <Users className="w-5 h-5 text-amber-500" />
+            <span className="text-[10px] font-bold mt-1">Quản trị</span>
+          </button>
+        ) : (
+          <button
+            onClick={onOpenKeyActivation}
+            className="flex flex-col items-center justify-center p-1.5 rounded-2xl text-slate-600 dark:text-slate-400 hover:text-amber-500"
+          >
+            <Key className="w-5 h-5 text-amber-500" />
+            <span className="text-[10px] font-bold mt-1">Key AI</span>
+          </button>
+        )}
 
-        {/* Settings Button */}
+        {/* Logout Button */}
         <button
-          onClick={onOpenSettings}
-          className="flex flex-col items-center justify-center p-1.5 rounded-2xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+          onClick={onLogout}
+          className="flex flex-col items-center justify-center p-1.5 rounded-2xl text-slate-400 hover:text-rose-500 transition-colors"
         >
-          <Settings className="w-5 h-5" />
-          <span className="text-[10px] font-bold mt-1">Cài đặt</span>
+          <LogOut className="w-5 h-5" />
+          <span className="text-[10px] font-bold mt-1">Đăng xuất</span>
         </button>
 
       </div>
