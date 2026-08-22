@@ -14,8 +14,6 @@ dist-ssr
 
 # Ignored subdirectories
 Brain 2/
-App học tiếng anh/
-App*
 
 # Editor directories and files
 .vscode/*
