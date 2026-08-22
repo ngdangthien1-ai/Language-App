@@ -4,7 +4,7 @@ class AudioService {
   private synth: SpeechSynthesis | null = null;
   private voices: SpeechSynthesisVoice[] = [];
   private isLoaded = false;
-  private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private currentAudioElement: HTMLAudioElement | null = null;
   private onStateChangeListeners: Array<(isSpeaking: boolean, currentText: string) => void> = [];
   private currentSpeakingText: string = '';
 
@@ -36,13 +36,30 @@ class AudioService {
     this.onStateChangeListeners.forEach(cb => cb(isSpeaking, this.currentSpeakingText));
   }
 
-  public getAvailableVoices(lang: Language): SpeechSynthesisVoice[] {
-    if (!this.synth) return [];
-    if (!this.isLoaded) this.initVoices();
-    const prefix = lang === 'en' ? 'en' : 'zh';
-    return this.voices.filter(v => v.lang.toLowerCase().startsWith(prefix));
+  /**
+   * Tạo URL phát âm người bản xứ (Studio Quality MP3)
+   */
+  private getNativeAudioUrl(text: string, lang: Language, preferUK?: boolean): string {
+    const encoded = encodeURIComponent(text.trim());
+    if (lang === 'en') {
+      // 1 = UK, 2 = US English studio native dictionary audio
+      const type = preferUK ? 1 : 2;
+      return `https://dict.youdao.com/dictvoice?audio=${encoded}&type=${type}`;
+    } else {
+      // Standard Mandarin (Beijing Accent) Native Studio Audio
+      return `https://dict.youdao.com/dictvoice?le=zh&audio=${encoded}`;
+    }
   }
 
+  private getGoogleTTSUrl(text: string, lang: Language, preferUK?: boolean): string {
+    const encoded = encodeURIComponent(text.trim());
+    const tl = lang === 'zh' ? 'zh-CN' : preferUK ? 'en-GB' : 'en-US';
+    return `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encoded}`;
+  }
+
+  /**
+   * Phát âm chuẩn bản xứ (Tối ưu cho cả điện thoại & máy tính)
+   */
   public speak(
     text: string,
     lang: Language,
@@ -54,27 +71,80 @@ class AudioService {
       onError?: () => void;
     }
   ) {
-    if (!this.synth) {
-      console.warn('Speech synthesis is not supported in this browser.');
-      options?.onError?.();
-      return;
-    }
-
-    // Stop current speech
+    // Stop any existing playback
     this.stop();
 
     const cleanText = text.trim();
     if (!cleanText) return;
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    
-    // Set speech language & voice
+    // 1. Thử phát bằng Native Studio Human Audio (Chất lượng 100% người bản xứ)
+    try {
+      const isShort = cleanText.split(/\s+/).length <= 12;
+      const audioUrl = isShort 
+        ? this.getNativeAudioUrl(cleanText, lang, options?.preferUK)
+        : this.getGoogleTTSUrl(cleanText, lang, options?.preferUK);
+
+      const audio = new Audio(audioUrl);
+      this.currentAudioElement = audio;
+
+      if (options?.rate) {
+        audio.playbackRate = Math.max(0.7, Math.min(1.5, options.rate));
+      }
+
+      this.notify(true, cleanText);
+
+      audio.onended = () => {
+        this.notify(false, '');
+        this.currentAudioElement = null;
+        options?.onEnd?.();
+      };
+
+      audio.onerror = () => {
+        // Nếu lỗi mạng, fallback về SpeechSynthesis
+        console.warn('Native audio stream error, falling back to Web Speech Synthesis');
+        this.fallbackSpeechSynthesis(cleanText, lang, options);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Audio play prevented or failed, fallback to SpeechSynthesis:', err);
+          this.fallbackSpeechSynthesis(cleanText, lang, options);
+        });
+      }
+    } catch (e) {
+      this.fallbackSpeechSynthesis(cleanText, lang, options);
+    }
+  }
+
+  /**
+   * Fallback Web Speech Synthesis khi Offline
+   */
+  private fallbackSpeechSynthesis(
+    text: string,
+    lang: Language,
+    options?: {
+      rate?: number;
+      pitch?: number;
+      preferUK?: boolean;
+      onEnd?: () => void;
+      onError?: () => void;
+    }
+  ) {
+    if (!this.synth) {
+      this.notify(false, '');
+      options?.onError?.();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+
     if (lang === 'en') {
       utterance.lang = options?.preferUK ? 'en-GB' : 'en-US';
       const preferredVoices = this.voices.filter(v => 
         options?.preferUK 
-          ? (v.lang === 'en-GB' || v.name.includes('UK') || v.name.includes('British'))
-          : (v.lang === 'en-US' || v.name.includes('US') || v.name.includes('Google US') || v.name.includes('Natural'))
+          ? (v.lang === 'en-GB' || v.name.includes('UK') || v.name.includes('British') || v.name.includes('Oliver') || v.name.includes('Kate'))
+          : (v.name.includes('Google US') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Alex') || v.lang === 'en-US')
       );
       if (preferredVoices.length > 0) {
         utterance.voice = preferredVoices[0];
@@ -82,7 +152,7 @@ class AudioService {
     } else {
       utterance.lang = 'zh-CN';
       const zhVoices = this.voices.filter(v => 
-        v.lang === 'zh-CN' || v.lang === 'zh' || v.name.includes('Chinese') || v.name.includes('Mandarin')
+        v.name.includes('Google 普通话') || v.name.includes('Ting-Ting') || v.name.includes('Sin-ji') || v.name.includes('Mei-Jia') || v.lang === 'zh-CN' || v.lang === 'zh'
       );
       if (zhVoices.length > 0) {
         utterance.voice = zhVoices[0];
@@ -93,40 +163,45 @@ class AudioService {
     utterance.pitch = options?.pitch ?? 1.0;
 
     utterance.onstart = () => {
-      this.notify(true, cleanText);
+      this.notify(true, text);
     };
 
     utterance.onend = () => {
       this.notify(false, '');
-      this.currentUtterance = null;
       options?.onEnd?.();
     };
 
-    utterance.onerror = (e) => {
-      console.error('Speech synthesis error:', e);
+    utterance.onerror = () => {
       this.notify(false, '');
-      this.currentUtterance = null;
       options?.onError?.();
     };
 
-    this.currentUtterance = utterance;
     this.synth.speak(utterance);
   }
 
   public stop() {
+    if (this.currentAudioElement) {
+      try {
+        this.currentAudioElement.pause();
+        this.currentAudioElement.currentTime = 0;
+      } catch (e) {
+        // ignore
+      }
+      this.currentAudioElement = null;
+    }
+
     if (this.synth) {
       this.synth.cancel();
-      this.notify(false, '');
-      this.currentUtterance = null;
     }
+
+    this.notify(false, '');
   }
 
   public isCurrentlySpeaking(text?: string): boolean {
-    if (!this.synth) return false;
     if (text) {
-      return this.synth.speaking && this.currentSpeakingText === text.trim();
+      return this.currentSpeakingText === text.trim();
     }
-    return this.synth.speaking;
+    return this.currentSpeakingText !== '';
   }
 }
 
