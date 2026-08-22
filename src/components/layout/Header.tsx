@@ -7,11 +7,12 @@ import {
   Sparkles, 
   Flame, 
   GraduationCap, 
-  Cloud,
+  Crown,
   UserCheck,
-  User
+  User,
+  ShieldCheck
 } from 'lucide-react';
-import { Language } from '../../types/vocab';
+import { Language, UserAccount, UserMode } from '../../types/vocab';
 
 interface HeaderProps {
   currentLangFilter: 'all' | Language;
@@ -21,7 +22,8 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onOpenGlobalQuiz: () => void;
   onOpenAuth: () => void;
-  currentUser: any;
+  userMode: UserMode;
+  currentAccount: UserAccount | null;
   todayCount: number;
   totalCount: number;
 }
@@ -34,7 +36,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenGlobalQuiz,
   onOpenAuth,
-  currentUser,
+  userMode,
+  currentAccount,
   todayCount,
   totalCount,
 }) => {
@@ -53,9 +56,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="font-extrabold text-lg sm:text-xl tracking-tight bg-gradient-to-r from-slate-900 via-brand-700 to-indigo-600 dark:from-white dark:via-blue-400 dark:to-indigo-300 bg-clip-text text-transparent">
                   LinguaFlow
                 </span>
-                <span className="text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 dark:bg-brand-950/80 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
-                  AI Studio
-                </span>
+                
+                {/* User Mode Badge */}
+                {userMode === 'authenticated' && currentAccount ? (
+                  <span className="inline-flex items-center space-x-1 text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                    <Crown className="w-3 h-3 text-amber-500 fill-amber-500" />
+                    <span>Học Thật</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center space-x-1 text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                    <span>Học Thử</span>
+                  </span>
+                )}
               </div>
               <p className="hidden sm:block text-xs text-slate-500 dark:text-slate-400 font-medium">
                 Sổ tay từ vựng song ngữ Anh - Trung thông minh
@@ -108,26 +120,28 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Actions */}
           <div className="flex items-center space-x-2 sm:space-x-3">
             
-            {/* Quick Daily Stats */}
-            <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-400 text-xs font-semibold">
-              <Flame className="w-4 h-4 text-amber-500 fill-amber-500 animate-bounce" />
-              <span>Hôm nay: {todayCount} từ</span>
-            </div>
-
-            {/* Cloud Sync Status / Auth Button */}
+            {/* Account / Mode Button */}
             <button
               onClick={onOpenAuth}
-              className={`hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                currentUser
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                userMode === 'authenticated' && currentAccount
                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                  : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm shadow-orange-500/20 hover:opacity-95'
               }`}
-              title={currentUser ? `Đang đồng bộ (${currentUser.email})` : 'Đăng nhập để đồng bộ đa thiết bị'}
             >
-              <Cloud className={`w-3.5 h-3.5 ${currentUser ? 'text-emerald-600 animate-pulse' : 'text-slate-400'}`} />
-              <span className="max-w-[100px] truncate">
-                {currentUser ? currentUser.email.split('@')[0] : 'Đồng bộ Cloud'}
-              </span>
+              {userMode === 'authenticated' && currentAccount ? (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="max-w-[100px] truncate">
+                    {currentAccount.fullName || currentAccount.email.split('@')[0]}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Crown className="w-3.5 h-3.5" />
+                  <span>Đăng Ký Học Thật</span>
+                </>
+              )}
             </button>
 
             {/* Global Quiz Button */}

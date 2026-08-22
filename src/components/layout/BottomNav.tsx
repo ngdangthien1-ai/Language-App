@@ -3,11 +3,11 @@ import {
   BookOpen, 
   Search, 
   GraduationCap, 
-  Cloud, 
+  Crown, 
   Settings,
-  Languages
+  ShieldCheck
 } from 'lucide-react';
-import { Language } from '../../types/vocab';
+import { Language, UserAccount, UserMode } from '../../types/vocab';
 
 interface BottomNavProps {
   activeTab: 'notebook' | 'search';
@@ -17,7 +17,8 @@ interface BottomNavProps {
   onOpenQuiz: () => void;
   onOpenAuth: () => void;
   onOpenSettings: () => void;
-  currentUser: any;
+  userMode: UserMode;
+  currentAccount: UserAccount | null;
   wordCount: number;
 }
 
@@ -28,11 +29,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onOpenQuiz,
   onOpenAuth,
   onOpenSettings,
-  currentUser,
+  userMode,
+  currentAccount,
   wordCount,
 }) => {
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800 px-3 py-2">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800 px-3 py-2">
       <div className="flex items-center justify-around max-w-lg mx-auto">
         
         {/* Notebook / Language Switcher */}
@@ -79,19 +81,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span className="text-[10px] font-bold mt-1">Luyện Quiz</span>
         </button>
 
-        {/* Cloud Sync / Account Button */}
+        {/* Mode / Account Button */}
         <button
           onClick={onOpenAuth}
-          className="flex flex-col items-center justify-center p-1.5 rounded-2xl text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+          className={`flex flex-col items-center justify-center p-1.5 rounded-2xl transition-colors ${
+            userMode === 'authenticated' && currentAccount
+              ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+              : 'text-amber-600 dark:text-amber-400'
+          }`}
         >
           <div className="relative">
-            <Cloud className="w-5 h-5" />
-            {currentUser && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500" />
+            {userMode === 'authenticated' && currentAccount ? (
+              <ShieldCheck className="w-5 h-5 text-emerald-500" />
+            ) : (
+              <Crown className="w-5 h-5 text-amber-500" />
             )}
           </div>
           <span className="text-[10px] font-bold mt-1">
-            {currentUser ? 'Đã đồng bộ' : 'Đồng bộ'}
+            {userMode === 'authenticated' ? 'Học thật' : 'Đăng ký'}
           </span>
         </button>
 

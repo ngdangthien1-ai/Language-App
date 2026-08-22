@@ -1,5 +1,15 @@
 export type Language = 'en' | 'zh';
 
+export type UserMode = 'guest' | 'authenticated';
+
+export interface UserAccount {
+  email: string;
+  fullName?: string;
+  isApproved: boolean;
+  registeredAt: string;
+  geminiApiKey?: string;
+}
+
 export interface ExampleSentence {
   original: string;
   translation: string;

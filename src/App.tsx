@@ -11,12 +11,14 @@ import {
   Heart,
   Globe2,
   Trash2,
-  Cloud
+  Crown,
+  Send,
+  ShieldCheck
 } from 'lucide-react';
-import { VocabWord, Language, AppSettings, DailyVocabGroup } from './types/vocab';
+import { VocabWord, Language, AppSettings, DailyVocabGroup, UserAccount, UserMode } from './types/vocab';
 import { storageService } from './services/storage';
 import { lookupWordWithGemini } from './services/gemini';
-import { supabaseService } from './services/supabase';
+import { authService, ADMIN_EMAIL } from './services/auth';
 import { Header } from './components/layout/Header';
 import { BottomNav } from './components/layout/BottomNav';
 import { QuickSearchBar } from './components/lookup/QuickSearchBar';
@@ -25,7 +27,7 @@ import { DailyGroup } from './components/notebook/DailyGroup';
 import { FilterBar } from './components/notebook/FilterBar';
 import { QuizModal } from './components/quiz/QuizModal';
 import { SettingsModal } from './components/settings/SettingsModal';
-import { AuthModal } from './components/auth/AuthModal';
+import { RegistrationModal } from './components/auth/RegistrationModal';
 import { getTodayDateString } from './utils/dates';
 
 export const App: React.FC = () => {
@@ -37,8 +39,9 @@ export const App: React.FC = () => {
   const [masteryFilter, setMasteryFilter] = useState<'all' | VocabWord['mastery']>('all');
   const [starredOnly, setStarredOnly] = useState(false);
 
-  // User & Cloud Sync State
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  // User Mode & Auth State (Học Thử vs Đăng Ký Học Thật)
+  const [userMode, setUserMode] = useState<UserMode>(authService.getUserMode());
+  const [currentAccount, setCurrentAccount] = useState<UserAccount | null>(authService.getCurrentAccount());
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // AI Lookup State
@@ -60,78 +63,16 @@ export const App: React.FC = () => {
 
   const searchSectionRef = useRef<HTMLDivElement>(null);
 
-  // Show Toast
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Sync words from Cloud when user is logged in
-  const syncWithCloud = async (user: any) => {
-    if (!user) return;
-    try {
-      const cloudWords = await supabaseService.fetchCloudWords(user.id);
-      if (cloudWords.length > 0) {
-        // Merge cloud and local words (cloud takes priority by id)
-        const localWords = storageService.getWords();
-        const mergedMap = new Map<string, VocabWord>();
-        localWords.forEach(w => mergedMap.set(w.id, w));
-        cloudWords.forEach(w => mergedMap.set(w.id, w));
-        const mergedList = Array.from(mergedMap.values());
-        storageService.saveWords(mergedList);
-        setWords(mergedList);
-      } else {
-        // Upload local words to cloud if cloud is empty
-        const localWords = storageService.getWords();
-        if (localWords.length > 0) {
-          await supabaseService.syncLocalWordsToCloud(localWords, user.id);
-        }
-      }
-    } catch (e) {
-      console.warn('Cloud sync error:', e);
-    }
-  };
-
-  // Initial load & Auth Listener
+  // Load words from storage on mount
   useEffect(() => {
     const loadedWords = storageService.getWords();
     setWords(loadedWords);
-
-    // Check Auth session
-    supabaseService.getCurrentUser().then(user => {
-      setCurrentUser(user);
-      if (user) syncWithCloud(user);
-    });
-
-    const unsubscribeAuth = supabaseService.onAuthStateChange((user) => {
-      setCurrentUser(user);
-      if (user) {
-        syncWithCloud(user);
-        showToast(`Đã đồng bộ tài khoản: ${user.email}`, 'success');
-      }
-    });
-
-    return () => {
-      unsubscribeAuth();
-    };
   }, []);
-
-  // Realtime Cloud Subscription
-  useEffect(() => {
-    if (!currentUser) return;
-    const unsubscribeRealtime = supabaseService.subscribeToRealtime(currentUser.id, async () => {
-      const updated = await supabaseService.fetchCloudWords(currentUser.id);
-      if (updated.length > 0) {
-        storageService.saveWords(updated);
-        setWords(updated);
-        showToast('Dữ liệu vừa được đồng bộ tự động từ thiết bị khác!', 'success');
-      }
-    });
-
-    return () => {
-      unsubscribeRealtime();
-    };
-  }, [currentUser]);
 
   // Sync Dark Mode class on <html>
   useEffect(() => {
@@ -168,42 +109,27 @@ export const App: React.FC = () => {
     }
   };
 
-  // Word CRUD (Local + Cloud Sync)
-  const handleSaveWord = async (wordToSave: VocabWord) => {
+  // Word CRUD
+  const handleSaveWord = (wordToSave: VocabWord) => {
     const updated = storageService.addWord(wordToSave);
     setWords(updated);
     showToast(`Đã lưu "${wordToSave.word}" vào sổ tay hôm nay!`, 'success');
-
-    if (currentUser) {
-      await supabaseService.saveCloudWord(wordToSave, currentUser.id);
-    }
   };
 
-  const handleToggleStar = async (id: string) => {
+  const handleToggleStar = (id: string) => {
     const updated = storageService.toggleStar(id);
     setWords(updated);
-    if (currentUser) {
-      const word = updated.find(w => w.id === id);
-      if (word) await supabaseService.saveCloudWord(word, currentUser.id);
-    }
   };
 
-  const handleSetMastery = async (id: string, mastery: VocabWord['mastery']) => {
+  const handleSetMastery = (id: string, mastery: VocabWord['mastery']) => {
     const updated = storageService.setMastery(id, mastery);
     setWords(updated);
-    if (currentUser) {
-      const word = updated.find(w => w.id === id);
-      if (word) await supabaseService.saveCloudWord(word, currentUser.id);
-    }
   };
 
-  const handleDeleteWord = async (id: string) => {
+  const handleDeleteWord = (id: string) => {
     const updated = storageService.deleteWord(id);
     setWords(updated);
     showToast('Đã xóa từ khỏi sổ tay.', 'success');
-    if (currentUser) {
-      await supabaseService.deleteCloudWord(id, currentUser.id);
-    }
   };
 
   // Open Quiz
@@ -293,7 +219,8 @@ export const App: React.FC = () => {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGlobalQuiz={handleOpenGlobalQuiz}
         onOpenAuth={() => setIsAuthOpen(true)}
-        currentUser={currentUser}
+        userMode={userMode}
+        currentAccount={currentAccount}
         todayCount={todayWordsCount}
         totalCount={words.length}
       />
@@ -301,6 +228,24 @@ export const App: React.FC = () => {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
         
+        {/* Trial Mode Welcome Banner (If guest) */}
+        {userMode === 'guest' && (
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-orange-950/40 dark:to-amber-950/40 border border-amber-300 dark:border-amber-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm animate-fade-in">
+            <div className="flex items-center space-x-2.5 text-amber-900 dark:text-amber-200">
+              <Sparkles className="w-5 h-5 text-amber-500 flex-shrink-0 animate-bounce" />
+              <span>
+                Bạn đang ở <strong>Chế độ Học Thử Miễn Phí</strong>. Đăng ký tài khoản học thật để được Admin ({ADMIN_EMAIL}) duyệt quyền đồng bộ đa thiết bị!
+              </span>
+            </div>
+            <button
+              onClick={() => setIsAuthOpen(true)}
+              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs shadow-md shadow-orange-500/20 whitespace-nowrap cursor-pointer transition-transform active:scale-95"
+            >
+              👑 Đăng Ký Học Thật Ngay
+            </button>
+          </div>
+        )}
+
         {/* Hero & Quick AI Search Bar */}
         <section ref={searchSectionRef} className="text-center space-y-4 pt-2">
           <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-200/60 dark:border-brand-900/50 text-brand-700 dark:text-brand-300 text-xs font-bold">
@@ -336,7 +281,7 @@ export const App: React.FC = () => {
                 <span>Sổ Tay Từ Vựng Theo Ngày</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Hiển thị {filteredWords.length} / {words.length} từ đã lưu {currentUser && '• 🟢 Cloud Sync'}
+                Hiển thị {filteredWords.length} / {words.length} từ đã lưu {currentAccount && `• 🟢 ${currentAccount.fullName || currentAccount.email}`}
               </p>
             </div>
 
@@ -405,10 +350,10 @@ export const App: React.FC = () => {
           <div className="flex items-center space-x-3">
             <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-semibold">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>{currentUser ? 'Cloud Sync & Local Backup' : 'Offline Local Storage'}</span>
+              <span>{userMode === 'authenticated' ? 'Đã kích hoạt Tài khoản Học Thật' : 'Chế độ Học Thử Miễn Phí'}</span>
             </span>
             <span>•</span>
-            <span className="font-semibold text-brand-600 dark:text-brand-400">Google Gemini AI Engine</span>
+            <span className="font-semibold text-brand-600 dark:text-brand-400">Admin: {ADMIN_EMAIL}</span>
           </div>
         </div>
       </footer>
@@ -422,7 +367,8 @@ export const App: React.FC = () => {
         onOpenQuiz={handleOpenGlobalQuiz}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        currentUser={currentUser}
+        userMode={userMode}
+        currentAccount={currentAccount}
         wordCount={words.length}
       />
 
@@ -456,15 +402,20 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Auth Modal */}
-      <AuthModal
+      {/* Registration & Mode Modal */}
+      <RegistrationModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        currentUser={currentUser}
-        onAuthSuccess={async () => {
-          const user = await supabaseService.getCurrentUser();
-          setCurrentUser(user);
-          if (user) syncWithCloud(user);
+        userMode={userMode}
+        currentAccount={currentAccount}
+        onModeChange={(mode, account) => {
+          setUserMode(mode);
+          setCurrentAccount(account);
+          if (account) {
+            showToast(`Đã kích hoạt chế độ Học Thật cho: ${account.fullName || account.email}`, 'success');
+          } else {
+            showToast('Đang ở chế độ Học Thử', 'success');
+          }
         }}
       />
 
