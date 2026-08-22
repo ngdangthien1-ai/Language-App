@@ -7,8 +7,9 @@ import {
   Sparkles, 
   Flame, 
   GraduationCap, 
-  BookOpen,
-  Volume2
+  Cloud,
+  UserCheck,
+  User
 } from 'lucide-react';
 import { Language } from '../../types/vocab';
 
@@ -19,6 +20,8 @@ interface HeaderProps {
   onToggleDarkMode: () => void;
   onOpenSettings: () => void;
   onOpenGlobalQuiz: () => void;
+  onOpenAuth: () => void;
+  currentUser: any;
   todayCount: number;
   totalCount: number;
 }
@@ -30,6 +33,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDarkMode,
   onOpenSettings,
   onOpenGlobalQuiz,
+  onOpenAuth,
+  currentUser,
   todayCount,
   totalCount,
 }) => {
@@ -40,7 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
           
           {/* Logo & Brand */}
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-brand-600 via-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-brand-500/20 text-white">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-brand-600 via-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-brand-500/20 text-white flex-shrink-0">
               <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse-subtle" />
             </div>
             <div>
@@ -58,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Center Language Workspace Switcher */}
+          {/* Center Language Workspace Switcher (Desktop) */}
           <div className="hidden md:flex items-center p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
             <button
               onClick={() => onSelectLangFilter('all')}
@@ -100,7 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Right Actions: Quiz Button, Stats, Dark Mode & Settings */}
+          {/* Right Actions */}
           <div className="flex items-center space-x-2 sm:space-x-3">
             
             {/* Quick Daily Stats */}
@@ -108,6 +113,22 @@ export const Header: React.FC<HeaderProps> = ({
               <Flame className="w-4 h-4 text-amber-500 fill-amber-500 animate-bounce" />
               <span>Hôm nay: {todayCount} từ</span>
             </div>
+
+            {/* Cloud Sync Status / Auth Button */}
+            <button
+              onClick={onOpenAuth}
+              className={`hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                currentUser
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+              }`}
+              title={currentUser ? `Đang đồng bộ (${currentUser.email})` : 'Đăng nhập để đồng bộ đa thiết bị'}
+            >
+              <Cloud className={`w-3.5 h-3.5 ${currentUser ? 'text-emerald-600 animate-pulse' : 'text-slate-400'}`} />
+              <span className="max-w-[100px] truncate">
+                {currentUser ? currentUser.email.split('@')[0] : 'Đồng bộ Cloud'}
+              </span>
+            </button>
 
             {/* Global Quiz Button */}
             <button
