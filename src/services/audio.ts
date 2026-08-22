@@ -37,7 +37,7 @@ class AudioService {
   }
 
   /**
-   * Phát âm tối ưu hóa 100% cho mọi thiết bị (Điện thoại iPhone, Android & Máy tính)
+   * Phát âm chuẩn bản xứ 100% cho cả Tiếng Anh và Tiếng Trung
    */
   public speak(
     text: string,
@@ -55,88 +55,25 @@ class AudioService {
     const cleanText = text.trim();
     if (!cleanText) return;
 
-    // 1. Ưu tiên Web Speech Synthesis trực tiếp (Tương thích 100% không bị chặn bởi bảo mật trên điện thoại)
-    if (this.synth) {
-      try {
-        // Unlock mobile speech state
-        if (this.synth.paused) {
-          this.synth.resume();
-        }
+    // Tự động nhận diện chữ Hán để luôn phát đúng giọng Tiếng Trung Bắc Kinh
+    const hasChineseChars = /[\u4e00-\u9fa5]/.test(cleanText);
+    const targetLang: Language = hasChineseChars ? 'zh' : lang;
 
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-
-        if (lang === 'en') {
-          utterance.lang = options?.preferUK ? 'en-GB' : 'en-US';
-          const enVoices = this.voices.filter(v => 
-            options?.preferUK
-              ? (v.lang.includes('GB') || v.name.includes('UK') || v.name.includes('British') || v.name.includes('Oliver') || v.name.includes('Kate') || v.name.includes('Daniel'))
-              : (v.name.includes('Google US') || v.name.includes('Samantha') || v.name.includes('Alex') || v.name.includes('Ava') || v.name.includes('Natural') || v.lang.includes('US') || v.lang.startsWith('en'))
-          );
-          if (enVoices.length > 0) {
-            utterance.voice = enVoices[0];
-          }
-        } else {
-          utterance.lang = 'zh-CN';
-          const zhVoices = this.voices.filter(v => 
-            v.name.includes('Google 普通话') || v.name.includes('Ting-Ting') || v.name.includes('Sin-ji') || v.name.includes('Mei-Jia') || v.name.includes('Chinese') || v.name.includes('Mandarin') || v.lang.includes('zh') || v.lang.includes('cmn')
-          );
-          if (zhVoices.length > 0) {
-            utterance.voice = zhVoices[0];
-          }
-        }
-
-        utterance.rate = options?.rate ?? (lang === 'zh' ? 0.85 : 0.9);
-        utterance.pitch = options?.pitch ?? 1.0;
-
-        utterance.onstart = () => {
-          this.notify(true, cleanText);
-        };
-
-        utterance.onend = () => {
-          this.notify(false, '');
-          options?.onEnd?.();
-        };
-
-        utterance.onerror = (e) => {
-          console.warn('Speech synthesis error, trying online audio fallback:', e);
-          this.playOnlineAudioFallback(cleanText, lang, options);
-        };
-
-        this.synth.speak(utterance);
-        return;
-      } catch (err) {
-        console.warn('Speech synthesis exception, fallback to online audio:', err);
-      }
-    }
-
-    // 2. Fallback sang Online Audio
-    this.playOnlineAudioFallback(cleanText, lang, options);
-  }
-
-  private playOnlineAudioFallback(
-    text: string,
-    lang: Language,
-    options?: {
-      rate?: number;
-      preferUK?: boolean;
-      onEnd?: () => void;
-      onError?: () => void;
-    }
-  ) {
+    // 1. Thử phát bằng Audio chất lượng phòng thu (Youdao Dictionary Voice)
     try {
-      const encoded = encodeURIComponent(text);
-      const url = lang === 'en'
+      const encoded = encodeURIComponent(cleanText);
+      const audioUrl = targetLang === 'en'
         ? `https://dict.youdao.com/dictvoice?audio=${encoded}&type=${options?.preferUK ? 1 : 2}`
         : `https://dict.youdao.com/dictvoice?le=zh&audio=${encoded}`;
 
-      const audio = new Audio(url);
+      const audio = new Audio(audioUrl);
       this.currentAudioElement = audio;
 
       if (options?.rate) {
         audio.playbackRate = options.rate;
       }
 
-      this.notify(true, text);
+      this.notify(true, cleanText);
 
       audio.onended = () => {
         this.notify(false, '');
@@ -145,15 +82,85 @@ class AudioService {
       };
 
       audio.onerror = () => {
+        console.warn('Native audio stream error, falling back to Web Speech');
+        this.fallbackSpeechSynthesis(cleanText, targetLang, options);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Audio play prevented, fallback to Web Speech:', err);
+          this.fallbackSpeechSynthesis(cleanText, targetLang, options);
+        });
+      }
+      return;
+    } catch (e) {
+      this.fallbackSpeechSynthesis(cleanText, targetLang, options);
+    }
+  }
+
+  private fallbackSpeechSynthesis(
+    text: string,
+    lang: Language,
+    options?: {
+      rate?: number;
+      pitch?: number;
+      preferUK?: boolean;
+      onEnd?: () => void;
+      onError?: () => void;
+    }
+  ) {
+    if (!this.synth) {
+      this.notify(false, '');
+      options?.onError?.();
+      return;
+    }
+
+    try {
+      if (this.synth.paused) {
+        this.synth.resume();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      if (lang === 'en') {
+        utterance.lang = options?.preferUK ? 'en-GB' : 'en-US';
+        const enVoices = this.voices.filter(v => 
+          options?.preferUK
+            ? (v.lang.includes('GB') || v.name.includes('UK') || v.name.includes('British') || v.name.includes('Oliver') || v.name.includes('Kate') || v.name.includes('Daniel'))
+            : (v.name.includes('Google US') || v.name.includes('Samantha') || v.name.includes('Alex') || v.name.includes('Ava') || v.name.includes('Natural') || v.lang.includes('US') || v.lang.startsWith('en'))
+        );
+        if (enVoices.length > 0) {
+          utterance.voice = enVoices[0];
+        }
+      } else {
+        utterance.lang = 'zh-CN';
+        const zhVoices = this.voices.filter(v => 
+          v.name.includes('Google 普通话') || v.name.includes('Ting-Ting') || v.name.includes('Sin-ji') || v.name.includes('Mei-Jia') || v.name.includes('Chinese') || v.name.includes('Mandarin') || v.lang.includes('zh') || v.lang.includes('cmn')
+        );
+        if (zhVoices.length > 0) {
+          utterance.voice = zhVoices[0];
+        }
+      }
+
+      utterance.rate = options?.rate ?? (lang === 'zh' ? 0.85 : 0.9);
+      utterance.pitch = options?.pitch ?? 1.0;
+
+      utterance.onstart = () => {
+        this.notify(true, text);
+      };
+
+      utterance.onend = () => {
         this.notify(false, '');
-        this.currentAudioElement = null;
+        options?.onEnd?.();
+      };
+
+      utterance.onerror = () => {
+        this.notify(false, '');
         options?.onError?.();
       };
 
-      audio.play().catch(() => {
-        this.notify(false, '');
-        options?.onError?.();
-      });
+      this.synth.speak(utterance);
     } catch (e) {
       this.notify(false, '');
       options?.onError?.();

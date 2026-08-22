@@ -77,7 +77,9 @@ export async function lookupWordWithGemini(
   customApiKey?: string
 ): Promise<VocabWord> {
   const apiKey = (customApiKey || DEFAULT_GEMINI_KEY).trim();
-  const lang = targetLang || detectLanguage(inputWord);
+  const hasChineseChars = /[\u4e00-\u9fa5]/.test(inputWord);
+  // If input contains Hanzi, it is ALWAYS Chinese
+  const lang: Language = hasChineseChars ? 'zh' : (targetLang || detectLanguage(inputWord));
   const normalizedWord = inputWord.trim();
 
   if (!apiKey) {
@@ -188,7 +190,7 @@ Return ONLY raw valid JSON:
       const vocabWord: VocabWord = {
         id: `vocab-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         word: parsed.word || normalizedWord,
-        language: parsed.language || lang,
+        language: hasChineseChars ? 'zh' : (parsed.language || lang),
         phonetic: parsed.phonetic || '',
         level: parsed.level || (lang === 'zh' ? 'HSK' : 'CEFR'),
         hanziSimplified: parsed.hanziSimplified || (lang === 'zh' ? parsed.word : undefined),
